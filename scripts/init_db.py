@@ -7,13 +7,16 @@
     python scripts/init_db.py --drop     # 先 DROP 已有表再重建（危险，仅演示）
 """
 
+import os
 import sys
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import Engine
 
-sys.path.insert(0, r"C:\PythonProject\ecology-agent")
+# 把项目根目录加入 sys.path（无论从哪里执行都可用），根目录 = 本文件上两级
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
 from app.core.config import DB_NAME, SERVER_DATABASE_URL, SQLALCHEMY_DATABASE_URL  # noqa: E402
 import app.models  # noqa: F401,E402  (注册全部模型)

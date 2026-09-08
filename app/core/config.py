@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Application configuration (read from environment, with demo defaults)."""
+"""Application configuration (read from .env / environment, with demo defaults)."""
 
 import os
 from functools import lru_cache
 
-# demo 默认直连本地 MySQL（3307）；部署时通过环境变量覆盖
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()  # 读取项目根目录 .env（若存在）；缺失时使用下方默认值
+except ImportError:  # 未安装 python-dotenv 时静默降级
+    pass
+
+# demo 默认直连本地 MySQL（3307）；部署/协作时用 .env 或环境变量覆盖
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = int(os.getenv("DB_PORT", "3307"))
 DB_USER = os.getenv("DB_USER", "root")
