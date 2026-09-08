@@ -28,6 +28,7 @@ ecology-agent/
 │   ├── init_db.py              # 初始化脚本：建库 + 建表
 │   ├── mock_data.py            # Mock 数据生成：向 ecology_demo 灌示例数据
 │   └── setup_readonly_user.py  # 创建只读账号 ecology_ro 并回填 .env
+│   └── mock_data.py            # Mock 数据生成：向 ecology_demo 灌入示例数据
 └── docs/
     ├── schema_manifest.json    # 全库表结构定义（机器可读，唯一事实源）
     ├── schema_report.md        # 表结构文档（人类/LLM 可读）
@@ -55,6 +56,8 @@ python scripts/init_db.py     # 建库建表
 python scripts/mock_data.py --reset   # （可选）灌入 mock 数据
 python scripts/setup_readonly_user.py # 创建只读账号并回填 .env
 ```
+| `scripts/mock_data.py` | 向全部表灌入语义合理的 mock 数据 | 开发/测试需要样例数据时 |
+| `docs/` | 表结构清单与字段字典 | 查阅结构、供导入器/LLM 使用 |
 
 ## 脚本使用方法
 
@@ -107,6 +110,21 @@ AGENT_MOCK=1 python -m app.agent.cli
 - 数据查询一律走只读账号 `ecology_ro`，应用层另有护栏（仅 SELECT/WITH、禁注释与危险函数、自动 `LIMIT 200`、10s 超时）；
 - 首次生成 SQL 执行失败会自动把错误回喂 LLM 修正（最多 2 次）；
 - 详见 `docs/agent_design.md`。
+### 3. 生成 Mock 数据（开发/测试用）
+
+```bash
+# 清空全部表后灌入 mock 数据（seed=42，可复现）：
+python scripts/mock_data.py --reset
+
+# 换种子 / 只预览不写库：
+python scripts/mock_data.py --seed 7
+python scripts/mock_data.py --dry-run
+```
+
+- 读取 `docs/schema_manifest.json` 驱动生成，维度表先于事实表插入，外键引用父表已生成的主键；
+- 共 23 张表约千行：每张测站/物种等维度表 5~14 行，数据表按月展开（如 6 站 × 24 月）；
+- 已埋入验证样本：**超标值**（3~6 倍放大）、**缺测**（约 2% 数值列置 NULL）、**季节波动**（水温正弦）与**趋势**（水位/氮磷缓升）；
+- 生成前请先执行 `python scripts/init_db.py` 确保表存在；数据仅用于开发测试，无真实数据。
 
 ### 4. 启动 API
 
