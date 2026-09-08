@@ -19,7 +19,8 @@ ecology-agent/
 ├── tools/
 │   └── build_schema.py         # 代码生成器：解析 xlsx 模板 → 重新生成 model/schema/docs
 ├── scripts/
-│   └── init_db.py              # 初始化脚本：建库 + 建表
+│   ├── init_db.py              # 初始化脚本：建库 + 建表
+│   └── mock_data.py            # Mock 数据生成：向 ecology_demo 灌入示例数据
 └── docs/
     ├── schema_manifest.json    # 全库表结构定义（机器可读，唯一事实源）
     └── schema_report.md        # 表结构文档（人类/LLM 可读）
@@ -32,6 +33,7 @@ ecology-agent/
 | `app/models/`、`app/schemas/` | 应用的 ORM 与校验模型，应用运行直接依赖 | 日常运行，勿手改 |
 | `tools/build_schema.py` | 由 Excel 模板（前三行：英文列码/中文含义/填写说明）生成 model、schema、docs | 仅当模板变动或扩展新领域时 |
 | `scripts/init_db.py` | 在 MySQL 建库（`ecology_demo`）并创建全部表 | 新机器初始化、库表变更后 |
+| `scripts/mock_data.py` | 向全部表灌入语义合理的 mock 数据 | 开发/测试需要样例数据时 |
 | `docs/` | 表结构清单与字段字典 | 查阅结构、供导入器/LLM 使用 |
 
 ## 脚本使用方法
@@ -64,7 +66,23 @@ python tools/build_schema.py
 - 扩新领域时需先在 `tools/build_schema.py` 顶部的 `TABLES`（表登记）、`FKS`（外键）、`PKS`（主键）、`EXPLICIT`（字段类型覆盖）配置中登记，并同步 `app/models/__init__.py` 的导入；
 - 生成后如需让新表落到数据库，再执行 `python scripts/init_db.py`。
 
-### 3. 启动 API
+### 3. 生成 Mock 数据（开发/测试用）
+
+```bash
+# 清空全部表后灌入 mock 数据（seed=42，可复现）：
+python scripts/mock_data.py --reset
+
+# 换种子 / 只预览不写库：
+python scripts/mock_data.py --seed 7
+python scripts/mock_data.py --dry-run
+```
+
+- 读取 `docs/schema_manifest.json` 驱动生成，维度表先于事实表插入，外键引用父表已生成的主键；
+- 共 23 张表约千行：每张测站/物种等维度表 5~14 行，数据表按月展开（如 6 站 × 24 月）；
+- 已埋入验证样本：**超标值**（3~6 倍放大）、**缺测**（约 2% 数值列置 NULL）、**季节波动**（水温正弦）与**趋势**（水位/氮磷缓升）；
+- 生成前请先执行 `python scripts/init_db.py` 确保表存在；数据仅用于开发测试，无真实数据。
+
+### 4. 启动 API
 
 ```bash
 python -m uvicorn app.main:app --reload --port 8000
