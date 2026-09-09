@@ -1,3 +1,6 @@
+# 根 .gitignore —— 规则递归匹配任意层级（node_modules/ 同时作用于根与 web/ 等）。
+# 注：如未来把 web/ 拆为独立仓库，再在 web/ 内新建自己的 .gitignore。
+
 # ---- Python ----
 __pycache__/
 *.py[cod]
@@ -11,27 +14,27 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
-# ---- Node / npm ----
+# ---- Node / npm（前端 web/ 与根级 npm 缓存）----
 node_modules/
 .npm-cache/
 
-
+# ---- 环境变量 / 密钥（不入库）----
 .env
 *.local
 
-
+# ---- IDE / 编辑器 ----
 .idea/
 .vscode/
 *.swp
 
-
+# ---- 数据库导出/备份 ----
 *.sql
 *.dump
 *.bak
 
-
+# ---- 系统文件 ----
 .DS_Store
 Thumbs.db
 
-
+# ---- 日志 ----
 *.log
