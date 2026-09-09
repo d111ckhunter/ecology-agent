@@ -33,6 +33,10 @@ class SessionStore(ABC):
     def touch_session(self, session_id: str) -> None:
         """更新会话 updated_at（有新消息时调用）。"""
 
+    @abstractmethod
+    def delete_session(self, session_id: str) -> bool:
+        """删除会话及其全部消息；存在并删除返回 True，不存在返回 False。"""
+
     # ---------------- messages ----------------
     @abstractmethod
     def add_message(self, session_id: str, *, role: str, content: str | None = None,

@@ -49,6 +49,14 @@ def api_get_session(session_id: str, db: OrmSession = Depends(get_db)):
     return SessionOut(**s)
 
 
+@router.delete("/sessions/{session_id}", status_code=204)
+def api_delete_session(session_id: str, db: OrmSession = Depends(get_db)):
+    deleted = _store(db).delete_session(session_id)
+    if not deleted:
+        raise HTTPException(404, "会话不存在")
+    return None
+
+
 @router.get("/sessions/{session_id}/messages", response_model=list[MessageOut])
 def api_list_messages(session_id: str, db: OrmSession = Depends(get_db)):
     store = _store(db)
