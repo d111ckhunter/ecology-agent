@@ -34,6 +34,7 @@ from app.models.aqua_eco import (  # noqa: F401
     AquaReachInfo,
     SurveyPointInfo,
 )
+from app.models.session import AgentSession, AgentMessage  # noqa: F401
 
 __all__ = [
     # 01 水环境
@@ -48,6 +49,8 @@ __all__ = [
     "HabitatMonitorData", "ReachBiodiversityData", "ReachBioSurveyData",
     "FishSpecies", "FishCatchData", "FishDiversityData", "FishGrounds",
     "AquaReachInfo", "SurveyPointInfo",
+    # 会话记忆
+    "AgentSession", "AgentMessage",
     # infra
     "Base",
 ]
