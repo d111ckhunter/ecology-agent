@@ -3,15 +3,22 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   createSession as apiCreateSession,
+  deleteSession as apiDeleteSession,
   listMessages,
   listSessions,
   streamChat,
 } from '@/api/client'
 import type { ChatMsg, MessageItem, SessionItem } from '@/types'
 
+const SHOW_SQL_KEY = 'ecology.showSql'
+
 let seq = 0
 function nextId(prefix = 'local'): string {
   return `${prefix}-${++seq}-${Date.now()}`
+}
+
+function loadShowSql(): boolean {
+  return localStorage.getItem(SHOW_SQL_KEY) === '1'
 }
 
 /** 后端 MessageItem -> 统一展示模型 ChatMsg */
@@ -21,7 +28,7 @@ function toChatMsg(m: MessageItem): ChatMsg {
     role: m.role,
     content: m.content ?? '',
     sql: m.sql,
-    table: null, // 历史消息不存表格事件；如需展示可用 result_summary（略）
+    table: null, // 历史消息不落表格事件（仅存 result_summary）
     status: m.role === 'user' ? 'done' : m.error ? 'error' : 'done',
     error: m.error,
   }
@@ -35,6 +42,8 @@ export const useChatStore = defineStore('chat', () => {
   const sending = ref(false)
   const sessionsLoading = ref(false)
   const error = ref('')
+  // 是否展示 SQL 代码块（默认关闭，用户可在界面切换，记忆在 localStorage）
+  const showSql = ref(loadShowSql())
 
   // ---------- getters ----------
   const activeSession = computed(
@@ -42,6 +51,11 @@ export const useChatStore = defineStore('chat', () => {
   )
 
   // ---------- actions ----------
+  function setShowSql(v: boolean) {
+    showSql.value = v
+    localStorage.setItem(SHOW_SQL_KEY, v ? '1' : '0')
+  }
+
   async function loadSessions() {
     sessionsLoading.value = true
     try {
@@ -79,6 +93,28 @@ export const useChatStore = defineStore('chat', () => {
     await loadMessages(id)
   }
 
+  /** 删除会话；若删除的是当前会话则自动切到最近一个（或空态） */
+  async function removeSession(id: string) {
+    const idx = sessions.value.findIndex((s) => s.id === id)
+    if (idx < 0) return
+    try {
+      await apiDeleteSession(id)
+    } catch (e: unknown) {
+      error.value = (e as Error).message
+      return
+    }
+    sessions.value.splice(idx, 1)
+    if (activeSessionId.value === id) {
+      activeSessionId.value = null
+      messages.value = []
+      if (sessions.value.length > 0) {
+        // 切换到原位置之后的会话；越界则选第一个
+        const next = sessions.value[Math.min(idx, sessions.value.length - 1)]
+        await selectSession(next.id)
+      }
+    }
+  }
+
   /** 向当前会话提问（SSE 流式更新本地 pending 消息） */
   async function ask(question: string) {
     if (sending.value) return
@@ -114,7 +150,8 @@ export const useChatStore = defineStore('chat', () => {
       await streamChat(sessionId, question, (ev) => {
         switch (ev.type) {
           case 'status':
-            pending.status = ev.stage === 'composing' ? 'running' : 'thinking'
+            if (ev.stage === 'chat_fallback') pending.status = 'running'
+            else pending.status = ev.stage === 'composing' ? 'running' : 'thinking'
             break
           case 'sql':
             pending.sql = ev.sql
@@ -125,7 +162,14 @@ export const useChatStore = defineStore('chat', () => {
             pending.status = 'running'
             break
           case 'answer':
-            pending.content = ev.text
+            // 兼容：一次性 answer 视为整段
+            pending.content += ev.text
+            pending.status = 'running'
+            break
+          case 'answer_delta':
+            // v3：token 级增量，追加即可（流式期间以纯文本展示）
+            pending.content += ev.delta
+            pending.status = 'running'
             break
           case 'error':
             pending.status = 'error'
@@ -144,11 +188,7 @@ export const useChatStore = defineStore('chat', () => {
       pending.error = (e as Error).message
     } finally {
       sending.value = false
-      // 流结束后把该会话持久化消息拉回，替换本地占位（保证刷新一致）
-      try {
-        const raw = await listMessages(sessionId)
-        messages.value = raw.map(toChatMsg)
-      } catch { /* 保留本地状态 */ }
+      // 保留本地累积的完整内容/表格（服务端已持久化同内容），不整表替换以免丢失表格与增量
     }
   }
 
@@ -160,10 +200,13 @@ export const useChatStore = defineStore('chat', () => {
     sending,
     sessionsLoading,
     error,
+    showSql,
+    setShowSql,
     loadSessions,
     loadMessages,
     newSession,
     selectSession,
+    removeSession,
     ask,
   }
 })
