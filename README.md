@@ -57,8 +57,9 @@ cd web && npm install && cd ..
 ## 启动服务
 
 ```bash
-# 终端 1：后端（无 LLM key 也可用 AGENT_MOCK=1 演示）
-AGENT_MOCK=1 python -m uvicorn app.main:app --reload --port 8000
+# 终端 1：后端（启动参数已内置，直接运行；无 LLM key 用 AGENT_MOCK=1 演示）
+AGENT_MOCK=1 python -m app.main
+# 可选：--host / --port / --no-reload（均有默认值：127.0.0.1:8000，开发默认热重载）
 # 访问 http://127.0.0.1:8000/docs 查看接口；/health 探活
 
 # 终端 2：前端
@@ -95,7 +96,7 @@ event: done    data: {"type":"done","session_id":"...","message_id":...,"ok":tru
 ### 快速验证
 ```bash
 # 无 LLM key 也可跑通链路（AGENT_MOCK 演示模式）
-AGENT_MOCK=1 python -m uvicorn app.main:app --reload --port 8000
+AGENT_MOCK=1 python -m app.main
 
 # 建会话
 curl -X POST localhost:8000/api/sessions -H 'Content-Type: application/json' -d '{"title":"demo"}'
