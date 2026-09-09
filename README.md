@@ -37,24 +37,32 @@ ecology-agent/
 │   ├── schema_manifest.json    # 全库表结构（机器可读，唯一事实源）
 │   ├── schema_report.md        # 表结构文档（人类/LLM 可读）
 │   └── agent_design.md         # Agent 设计文档
-└── web/                        # Vue3 前端（待接入）
+└── web/                        # Vue3 前端（Vite+TS+Element Plus）
 ```
 
 ## 环境准备（首次）
 
 ```bash
+# 后端
 pip install -r requirements.txt
 cp .env.example .env          # 填 DB_* 与 LLM_API_KEY
 python scripts/init_db.py              # 建库建表（含会话表，共 25 张）
 python scripts/mock_data.py --reset    # （可选）灌入 mock 数据
 python scripts/setup_readonly_user.py  # 创建只读账号 ecology_ro 并回填 .env
+
+# 前端
+cd web && npm install && cd ..
 ```
 
 ## 启动服务
 
 ```bash
-python -m uvicorn app.main:app --reload --port 8000
+# 终端 1：后端（无 LLM key 也可用 AGENT_MOCK=1 演示）
+AGENT_MOCK=1 python -m uvicorn app.main:app --reload --port 8000
 # 访问 http://127.0.0.1:8000/docs 查看接口；/health 探活
+
+# 终端 2：前端
+cd web && npm run dev        # http://localhost:5173（/api 已代理到 8000）
 ```
 
 ## HTTP API（v2，多轮对话）
