@@ -48,6 +48,15 @@ class MySQLSessionStore(SessionStore):
             obj.updated_at = datetime.utcnow()
             self.db.commit()
 
+    def delete_session(self, session_id: str) -> bool:
+        obj = self.db.get(AgentSession, session_id)
+        if obj is None:
+            return False
+        # ORM cascade="all, delete-orphan" 级联删除消息（DB 外键另有 ON DELETE CASCADE）
+        self.db.delete(obj)
+        self.db.commit()
+        return True
+
     # ---------------- messages ----------------
     def add_message(self, session_id: str, *, role: str, content: str | None = None,
                     sql: str | None = None, result_summary: str | None = None,

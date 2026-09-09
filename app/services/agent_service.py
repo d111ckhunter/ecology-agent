@@ -3,19 +3,19 @@
 会话化 Agent 服务：把 SessionStore + EcologyAgent 编排为可流式输出的
 事件生成器，供 SSE 路由消费。
 
-事件协议（每项为一个 dict，SSE 层负责序列化）:
-  {"type": "status",  "stage": "..."}
-  {"type": "sql",     "sql": "...", "thinking": "..."}
-  {"type": "table",   "columns": [...], "rows": [...], "truncated": bool}
-  {"type": "answer",  "text": "..."}
-  {"type": "error",   "message": "..."}
-  {"type": "done",    "message_id": ..., "session_id": ...}
+SSE 事件协议（每项为一个 dict，路由层负责序列化）:
+  {"type": "status",        "stage": "generating_sql|composing|chat_fallback"}
+  {"type": "sql",           "sql": "...", "thinking": "..."}
+  {"type": "table",         "columns": [...], "rows": [...], "truncated": bool}
+  {"type": "answer_delta",  "delta": "..."}        # 回答文本逐块（token 级打字机）
+  {"type": "error",         "message": "..."}
+  {"type": "done",          "message_id": ..., "session_id": ..., "ok": bool, "kind": "sql|chat"}
 """
 
 import json
 import uuid
 
-from app.agent.agent import EcologyAgent, make_result_summary
+from app.agent.agent import AgentAnswer, EcologyAgent, make_result_summary
 from app.agent.llm import LLMConfigError
 from app.services.session_store import SessionStore
 
@@ -59,32 +59,30 @@ def stream_chat(store: SessionStore, session_id: str, question: str):
 
     # ---- 持久化 user 消息（先入库再回答，保证提问不丢）----
     user_msg = store.add_message(session_id, role="user", content=question)
-    yield {"type": "status", "stage": "generating_sql"}
 
     # ---- 取历史记忆（不含本轮 user 消息——它在 add_message 后才入 recent）----
     history = store.recent_messages(session_id, n=HISTORY_FETCH)
     if history and history[-1].get("id") == user_msg.get("id"):
         history = history[:-1]  # 移除刚写入的本轮 user，避免自问自答
 
-    # ---- 调用 Agent（同步 LLM/DB，放在线程池外同步执行亦可，见路由层）----
-    ans = agent.ask(question, history=history)
-    yield {"type": "status", "stage": "composing"}
+    # ---- 消费 run_events：转发前端事件并聚合完整答案用于落库 ----
+    answer_parts: list[str] = []
+    ans: AgentAnswer | None = None
 
-    # ---- 按事件协议输出 ----
-    if ans.sql:
-        yield {"type": "sql", "sql": ans.sql, "thinking": ans.thinking}
-    if ans.execution is not None and ans.execution.ok:
-        yield {
-            "type": "table",
-            "columns": ans.execution.columns,
-            "rows": ans.execution.rows,
-            "truncated": ans.execution.truncated,
-            "elapsed": ans.execution.elapsed,
-        }
-    if ans.ok:
-        yield {"type": "answer", "text": ans.answer_text}
-    else:
-        yield {"type": "error", "message": ans.answer_text or ans.error}
+    for ev in agent.run_events(question, history=history):
+        etype = ev.get("type")
+        if etype == "_final":
+            ans = ev["answer"]
+            continue
+        if etype == "answer_delta":
+            answer_parts.append(ev["delta"])
+        # 其余事件（status/sql/table/error）原样转发
+        yield ev
+
+    # 若无内部 _final（理论上不会），构造兜底对象
+    if ans is None:
+        ans = AgentAnswer(question=question, ok=False,
+                          answer_text="".join(answer_parts), error="agent 未返回结果")
 
     # ---- 持久化 assistant 消息（含 sql 与结果摘要，供下轮记忆）----
     asst_msg = store.add_message(
@@ -101,6 +99,7 @@ def stream_chat(store: SessionStore, session_id: str, question: str):
         "session_id": session_id,
         "message_id": asst_msg.get("id"),
         "ok": ans.ok,
+        "kind": ans.kind,
     }
 
 

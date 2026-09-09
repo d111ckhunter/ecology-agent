@@ -38,6 +38,18 @@ export async function listMessages(sessionId: string): Promise<MessageItem[]> {
   return handle<MessageItem[]>(res)
 }
 
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}`, { method: 'DELETE' })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const j = await res.json()
+      detail = j?.detail ?? detail
+    } catch { /* ignore */ }
+    throw new Error(`${res.status}: ${detail}`)
+  }
+}
+
 /**
  * 提问并解析 SSE 流。由于 EventSource 不支持 POST，这里用
  * fetch + ReadableStream 手动按 SSE 协议逐帧解析，回调每类事件。

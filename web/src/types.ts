@@ -29,12 +29,15 @@ export interface TableEvent {
   elapsed?: number
 }
 export interface AnswerEvent { type: 'answer'; text: string }
+/** v3：回答文本按 token 增量推送 */
+export interface AnswerDeltaEvent { type: 'answer_delta'; delta: string }
 export interface ErrorEvent { type: 'error'; message: string }
 export interface DoneEvent {
   type: 'done'
   session_id: string
   message_id?: number
   ok: boolean
+  kind?: 'sql' | 'chat'
 }
 
 export type ChatEvent =
@@ -42,6 +45,7 @@ export type ChatEvent =
   | SqlEvent
   | TableEvent
   | AnswerEvent
+  | AnswerDeltaEvent
   | ErrorEvent
   | DoneEvent
 

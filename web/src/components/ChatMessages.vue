@@ -43,14 +43,19 @@
             <el-icon><MagicStick /></el-icon>
           </div>
           <div class="bubble bubble--assistant">
-            <!-- 思考中 -->
-            <div v-if="m.status === 'thinking' && !m.sql && !m.content" class="status-line">
+            <!-- 思考中（尚无内容，也未出 SQL） -->
+            <div v-if="m.status === 'thinking' && !m.content && !m.sql" class="status-line">
               <span class="typing-dots"><i></i><i></i><i></i></span>
               正在理解并生成 SQL…
             </div>
 
-            <!-- SQL 展示 -->
-            <div v-if="m.sql" class="sql-block">
+            <!-- 兜底聊天进行中：无 SQL 且文本开始累积 -->
+            <div v-else-if="m.status === 'running' && !m.sql && m.content" class="status-line-mini">
+              <span class="typing-dots"><i></i><i></i><i></i></span>
+            </div>
+
+            <!-- SQL 展示（受全局开关 chat.showSql 控制 + 单条可收起） -->
+            <div v-if="m.sql && chat.showSql" class="sql-block">
               <div class="sql-block__head">
                 <span class="sql-label">SQL</span>
                 <span class="sql-actions">
@@ -88,8 +93,13 @@
               </div>
             </div>
 
-            <!-- 回答文本 -->
-            <div v-if="m.content" class="answer-text">{{ m.content }}</div>
+            <!-- 回答文本：流式期间纯文本（避免未闭合 Markdown 闪烁）；done 后 Markdown 渲染 -->
+            <div v-if="m.content" class="md-wrap">
+              <div v-if="m.status === 'done'" class="md-body" v-html="renderMarkdown(m.content)" />
+              <div v-else class="plain">
+                {{ m.content }}<span class="cursor">▋</span>
+              </div>
+            </div>
 
             <!-- 错误 -->
             <div v-if="m.status === 'error' && m.error" class="error-box">
@@ -109,6 +119,7 @@ import { storeToRefs } from 'pinia'
 import { MagicStick, User, WarningFilled } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { highlightSql } from '@/utils/format'
+import { renderMarkdown } from '@/utils/markdown'
 import type { TableEvent } from '@/types'
 
 defineEmits<{ suggest: [question: string] }>()
@@ -124,6 +135,7 @@ const suggestions = [
   '2024 年哪个测站氨氮最高？',
   '对比各河段的鱼类物种数',
   '2023 年水温最高的月份是？',
+  '什么是富营养化？',
 ]
 
 function toggleCollapse(id: string) {
@@ -279,17 +291,17 @@ watch(
 .plain {
   white-space: pre-wrap;
 }
-.answer-text {
-  white-space: pre-wrap;
-}
 
-/* ---------- 思考动画 ---------- */
+/* ---------- 状态行 ---------- */
 .status-line {
   display: flex;
   align-items: center;
   gap: 8px;
   color: #7a8ba5;
   font-size: 13px;
+}
+.status-line-mini {
+  margin-bottom: 6px;
 }
 .typing-dots i {
   display: inline-block;
@@ -318,6 +330,17 @@ watch(
     opacity: 1;
   }
 }
+.cursor {
+  display: inline-block;
+  width: 6px;
+  color: #3370ff;
+  animation: blink 1s step-start infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
 
 /* ---------- SQL 代码块 ---------- */
 .sql-block {
@@ -325,7 +348,6 @@ watch(
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid #20293a;
-  font-family: inherit;
 }
 .sql-block__head {
   display: flex;
@@ -390,5 +412,75 @@ watch(
   border-radius: 8px;
   padding: 8px 10px;
   margin-top: 4px;
+}
+
+/* ---------- Markdown 正文 ---------- */
+.md-body {
+  line-height: 1.8;
+}
+.md-body :deep(p) {
+  margin: 0 0 8px;
+}
+.md-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.md-body :deep(strong) {
+  color: #1d2b45;
+  font-weight: 600;
+}
+.md-body :deep(ul),
+.md-body :deep(ol) {
+  margin: 4px 0 10px;
+  padding-left: 22px;
+}
+.md-body :deep(li) {
+  margin: 3px 0;
+}
+.md-body :deep(blockquote) {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid #3370ff;
+  background: #f4f8ff;
+  color: #4a6080;
+}
+.md-body :deep(code) {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+  background: #eef2f8;
+  color: #c7254e;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+}
+.md-body :deep(pre) {
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: #0d1117;
+  padding: 0;
+}
+.md-body :deep(pre code) {
+  background: transparent;
+  color: #e6edf3;
+  padding: 0;
+}
+.md-body :deep(a) {
+  color: #3370ff;
+  text-decoration: none;
+}
+.md-body :deep(table) {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+  font-size: 13px;
+}
+.md-body :deep(th),
+.md-body :deep(td) {
+  border: 1px solid #e3ecf6;
+  padding: 6px 10px;
+  text-align: left;
+}
+.md-body :deep(th) {
+  background: #f3f7fc;
+  color: #4a6080;
 }
 </style>

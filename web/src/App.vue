@@ -10,6 +10,13 @@
         </div>
       </div>
       <div class="topbar__right">
+        <!-- SQL 显示开关（默认关闭） -->
+        <el-tooltip content="显示/隐藏 SQL" placement="bottom">
+          <div class="sql-toggle">
+            <span class="sql-toggle__label">SQL</span>
+            <el-switch v-model="sqlVisible" size="small" />
+          </div>
+        </el-tooltip>
         <span class="mode-chip" :class="chat.sending ? 'is-busy' : ''">
           <span class="dot" :class="chat.sending ? 'dot--busy' : 'dot--ok'"></span>
           {{ chat.sending ? '生成中' : '在线' }}
@@ -35,6 +42,21 @@
           >
             <el-icon class="session-icon"><ChatDotRound /></el-icon>
             <span class="session-title">{{ s.title || '未命名会话' }}</span>
+            <el-popconfirm
+              title="确定删除该会话？"
+              confirm-button-text="删除"
+              cancel-button-text="取消"
+              width="220"
+              @confirm="chat.removeSession(s.id)"
+            >
+              <template #reference>
+                <el-icon
+                  class="session-delete"
+                  title="删除会话"
+                  @click.stop
+                ><Delete /></el-icon>
+              </template>
+            </el-popconfirm>
           </div>
           <el-empty
             v-if="!chat.sessionsLoading && chat.sessions.length === 0"
@@ -54,13 +76,18 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { ChatDotRound, Plus } from '@element-plus/icons-vue'
+import { computed, onMounted } from 'vue'
+import { ChatDotRound, Delete, Plus } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import ChatMessages from '@/components/ChatMessages.vue'
 import ChatInput from '@/components/ChatInput.vue'
 
 const chat = useChatStore()
+
+const sqlVisible = computed({
+  get: () => chat.showSql,
+  set: (v: boolean) => chat.setShowSql(v),
+})
 
 onMounted(() => {
   chat.loadSessions()
@@ -126,6 +153,28 @@ async function onSend(q: string) {
 .brand-sub {
   font-size: 11px;
   color: #7a8ba5;
+}
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sql-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #4a6a92;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid #dde6f2;
+  padding: 5px 12px;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+}
+.sql-toggle__label {
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 .mode-chip {
   display: inline-flex;
@@ -232,9 +281,24 @@ async function onSend(q: string) {
   color: #3370ff;
 }
 .session-title {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.session-delete {
+  opacity: 0;
+  color: #b6c2d4;
+  font-size: 14px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.session-item:hover .session-delete {
+  opacity: 1;
+}
+.session-delete:hover {
+  color: #f56c6c;
 }
 
 /* ---------- 聊天区 ---------- */
