@@ -11,6 +11,7 @@ Everything here works off the manifest file - never queries the database.
 
 import json
 import os
+from functools import lru_cache
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _MANIFEST = os.path.join(_PROJECT_ROOT, "docs", "schema_manifest.json")
@@ -19,6 +20,7 @@ _MANIFEST = os.path.join(_PROJECT_ROOT, "docs", "schema_manifest.json")
 _KEEP = ("original", "column", "chinese", "sql_type", "is_pk")
 
 
+@lru_cache(maxsize=1)
 def load_manifest() -> list[dict]:
     with open(_MANIFEST, encoding="utf-8") as f:
         return json.load(f)

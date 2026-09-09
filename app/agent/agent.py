@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 """
 Agent orchestration: 中文问题 -> SQL -> 只读执行 -> 自然语言回答。
+（v2 增加多轮对话记忆：SQL 演进式 —— 追问基于最近成功的 SQL 改写）
 
 流程:
-  1) 组装系统提示词（身份规则 + schema 字典 + few-shot 示例）
+  1) 组装系统提示词（身份规则 + schema 字典 + 最近对话回顾(5轮滑动窗口)）
   2) 请求 LLM 产出 {"sql": "...", "thinking": "..."}
   3) 经 ReadonlyDBTool 执行（含护栏）
   4) SQL 失败 -> 将错误回喂 LLM 修正，最多 MAX_RETRIES 次
   5) 成功 -> 将结果交给 LLM 组织为中文回答
+
+记忆输入 history 约定（与 SessionStore.list_messages 返回结构兼容）：
+  [{"role": "user", "content": 问题},
+   {"role": "assistant", "content": 回答, "sql": "...", "result_summary": "..."}, ...]
 """
 
 from dataclasses import dataclass, field
@@ -18,6 +23,59 @@ from app.agent.llm import get_llm, MockLLM
 
 MAX_RETRIES = 2  # SQL 生成失败后的纠错次数（首次 + 2 次重试）
 SQL_ROW_PREVIEW = 30  # 回喂 LLM 组织回答时最多预览的行数
+MEMORY_WINDOW = 5  # 多轮记忆滑动窗口（保留最近 N 个“问题+成功SQL”对）
+RESULT_SUMMARY_ROWS = 10  # 写入会话存储的结果摘要保留前 N 行
+
+
+def build_memory_text(history: list[dict] | None) -> str:
+    """
+    从 history 中提取最近 MEMORY_WINDOW 个“成功问答对”渲染为回顾文本。
+
+    只有 assistant 消息且带 sql（执行成功）的轮次才进入记忆；
+    单独的提问或失败轮不进入（避免误导下一轮改写）。
+    """
+    if not history:
+        return ""
+    pairs = []
+    pending_q = None
+    for m in history:
+        role = m.get("role")
+        if role == "user":
+            pending_q = (m.get("content") or "").strip()
+        elif role == "assistant" and pending_q is not None and m.get("sql"):
+            pairs.append({
+                "q": pending_q,
+                "sql": m["sql"],
+                "summary": (m.get("result_summary") or "").strip(),
+            })
+            pending_q = None  # 该问题已配对，避免一条历史复用多次
+    if not pairs:
+        return ""
+    lines = ["\n===== 最近对话回顾（判断是否追问；追问可改写最近成功的 SQL）====="]
+    for i, p in enumerate(pairs[-MEMORY_WINDOW:], start=1):
+        lines.append("[%d] 用户: %s" % (i, p["q"]))
+        lines.append("    SQL: %s" % p["sql"])
+        if p["summary"]:
+            lines.append("    结果摘要: %s" % p["summary"])
+    lines.append("说明：若本次问题是对上面某轮的追问/引用，请基于对应 SQL 改写；若属全新主题，忽略回顾直接编写新 SQL。")
+    return "\n".join(lines)
+
+
+def make_result_summary(result: SQLExecutionResult, max_rows: int = RESULT_SUMMARY_ROWS) -> str:
+    """把一次成功执行的结果压缩为文本摘要，供会话存储/下轮记忆使用。"""
+    if not result.ok:
+        return "执行失败: %s" % result.error
+    if not result.columns:
+        return "(空结果)"
+    rows_txt = []
+    for row in result.rows[:max_rows]:
+        rows_txt.append(" | ".join(str(v) for v in row))
+    txt = "列: %s\n" % ", ".join(result.columns)
+    txt += "行数: %d%s\n" % (len(result.rows), "（已截断）" if result.truncated else "")
+    if rows_txt:
+        txt += "前 %d 行:\n%s" % (min(len(rows_txt), max_rows), "\n".join(rows_txt))
+    return txt
+
 
 SYSTEM_TEMPLATE = """你是一名生态环境监测数据库的 SQL 专家。根据用户的中文问题编写 MySQL 查询。
 
@@ -29,6 +87,7 @@ SYSTEM_TEMPLATE = """你是一名生态环境监测数据库的 SQL 专家。根
 5. 时间类条件优先用 `monitor_time` 列；涉及年份/月份用 MySQL 日期函数。
 6. 若用户问题无法由现有表/列回答（例如查询不存在字段），不要编造，回复 {{"sql": null, "reason": "..."}}。
 7. 不要假设表中有你未在字典里看到的列。
+8. 若“最近对话回顾”与本问题相关，应尽量基于回顾中最近的成功 SQL 做局部改写（换时间/加列/改分组等），保持列名风格一致。
 
 输出格式（严格 JSON，不要夹杂其他文字）：
 {{"sql": "你的 SQL", "thinking": "一句简短说明"}}
@@ -94,6 +153,7 @@ class AgentAnswer:
                 "truncated": self.execution.truncated,
                 "elapsed": self.execution.elapsed,
             },
+            "result_summary": None if not self.execution else make_result_summary(self.execution),
             "trace": self.trace,
         }
 
@@ -105,14 +165,15 @@ class EcologyAgent:
         self.schema_text = build_schema_text()
         self.is_mock = isinstance(self.llm, MockLLM)
 
-    def _system_prompt(self) -> str:
-        return SYSTEM_TEMPLATE.format(schema_text=self.schema_text)
+    def _system_prompt(self, history: list[dict] | None = None) -> str:
+        memory = build_memory_text(history)
+        return SYSTEM_TEMPLATE.format(schema_text=self.schema_text) + memory
 
-    def ask(self, question: str) -> AgentAnswer:
+    def ask(self, question: str, history: list[dict] | None = None) -> AgentAnswer:
         ans = AgentAnswer(question=question)
-        # ---- 1. 生成 SQL ----
+        # ---- 1. 生成 SQL（携带记忆上下文）----
         messages = [
-            {"role": "system", "content": self._system_prompt()},
+            {"role": "system", "content": self._system_prompt(history)},
             {"role": "user", "content": question},
         ]
         gen = self.llm.chat_json(messages)
@@ -205,7 +266,14 @@ def build_agent(force_mock: bool = False) -> EcologyAgent:
 
 if __name__ == "__main__":  # 自检（mock 模式，不联网）
     agent = build_agent(force_mock=True)
-    ans = agent.ask("列出各测站监测记录数，从多到少排序")
-    print("ok:", ans.ok)
-    print("sql:", ans.sql)
-    print("answer:", ans.answer_text[:200])
+    # 模拟两轮：第二轮带第一轮的历史，验证记忆渲染不报错
+    ans1 = agent.ask("列出各测站监测记录数，从多到少排序")
+    history = [
+        {"role": "user", "content": ans1.question},
+        {"role": "assistant", "content": ans1.answer_text, "sql": ans1.sql,
+         "result_summary": make_result_summary(ans1.execution)},
+    ]
+    ans2 = agent.ask("只看水文站的？", history=history)
+    print("round1 ok:", ans1.ok)
+    print("round2 ok:", ans2.ok)
+    print("memory sample:\n", build_memory_text(history)[:300])

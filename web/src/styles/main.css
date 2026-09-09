@@ -1,0 +1,66 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  width: 100%;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #1f2d3d;
+}
+
+/* 全局渐变背景 */
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(64, 158, 255, 0.18), transparent 60%),
+    radial-gradient(1000px 500px at 110% 10%, rgba(103, 194, 58, 0.14), transparent 55%),
+    linear-gradient(160deg, #eef3f9 0%, #e6edf7 40%, #edf4f9 100%);
+  background-attachment: fixed;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c6d2e0;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8b8cc;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 通用淡入上浮 */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Element Plus 主色微调（更偏生态蓝） */
+.el-button--primary {
+  --el-button-bg-color: #3370ff;
+  --el-button-hover-bg-color: #5b8cff;
+  --el-button-active-bg-color: #2b5ce6;
+  --el-button-border-color: #3370ff;
+  --el-button-hover-border-color: #5b8cff;
+  --el-button-active-border-color: #2b5ce6;
+}
